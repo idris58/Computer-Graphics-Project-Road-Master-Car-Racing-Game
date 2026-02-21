@@ -1,14 +1,23 @@
 #include <windows.h> // for MS Windows
 #include <GL/glut.h> // GLUT, include glu.h and gl.h
 #include <iostream>
-#include <ctime>
 #include <cmath>
+#include <ctime>
+#include <cstdlib>
 
 using namespace std;
 
 
 GLfloat positiontree = 2.0f;
 GLfloat speedtree = 0.029f;
+const float MIN_SCROLL_SPEED = 0.01f;
+const float MAX_SCROLL_SPEED = 0.12f;
+const float PLAYER_MIN_X = -0.425f;
+const float PLAYER_MAX_X = 0.2f;
+const float PLAYER_STEP_X = 0.1f;
+const float LANE_LEFT_X = -0.425f;
+const float LANE_MID_X = -0.1f;
+const float LANE_RIGHT_X = 0.2f;
 /// Score
 int score = 0,s;
 ///Distance
@@ -16,24 +25,40 @@ float distancee = 0.0f,d;
 float moveAmount = 0.001f; // Initial amount of movement in each step
 bool moveLeft = false; //   indicate whether the car is moving left
 bool moveRight = false; //   indicate whether the car is moving right
-//mid point of the car=(-0.00014, -0.28558).
-float main_car_x = -0.00014f; // Initial x position
+//mid point of the car
+float main_car_x = LANE_MID_X; // Initial x position
 float main_car_y = -0.8; // Initial y position
-float position1_x =0.2f;
+float position1_x = LANE_RIGHT_X;
 float position1 = 0.0f;
 float position2 = 1.20f;
 float position3 = 1.50f;
 float position4 = 1.90f;
-float position1_x_1 =-0.425f;
-float position1_x_2 =0.425f;
+float position1_x_1 = LANE_LEFT_X;
+float position1_x_2 = LANE_MID_X;
 
-float H1=0.2f;
+float H1 = LANE_MID_X;
 
 int lives = 3;
-float B1=0.2f;
+float B1 = LANE_RIGHT_X;
 float B2=1.2f;
-bool collisionOccurred = false;
-time_t collisionStartTime;
+bool damageCooldownActive = false;
+int damageCooldownStartMs = 0;
+const int DAMAGE_COOLDOWN_MS = 700;
+bool healthPickupAvailable = true;
+
+float randomLaneX()
+{
+    int lane = rand() % 3;
+    if (lane == 0)
+    {
+        return LANE_LEFT_X;
+    }
+    if (lane == 1)
+    {
+        return LANE_MID_X;
+    }
+    return LANE_RIGHT_X;
+}
 
 float distance(float x1, float y1, float x2, float y2)
 {
@@ -49,71 +74,38 @@ void increaseLife()
 
 bool checkCollision()
 {
+    const float collisionThreshold = 0.14f;
+    bool collisionEvent = false;
+    int nowMs = glutGet(GLUT_ELAPSED_TIME);
 
-    float collisionThreshold = 0.14f;
-
-    // Check for collision with other car
-
-    if (distance(position1_x, position1, main_car_x, main_car_y) < collisionThreshold ||
-            distance(position1_x_1, position2, main_car_x, main_car_y) < collisionThreshold ||
-            distance(position1_x_2, position3, main_car_x, main_car_y) < collisionThreshold ||
-            distance(B1, B2, main_car_x, main_car_y) < collisionThreshold
-
-       )
-
+    if (damageCooldownActive && (nowMs - damageCooldownStartMs >= DAMAGE_COOLDOWN_MS))
     {
-
-        if (!collisionOccurred)
-        {
-
-            collisionOccurred = true;
-            collisionStartTime = time(NULL);
-        }
-
-        return true; // Collision detected with other objects
+        damageCooldownActive = false;
     }
 
-    // Check for collision with Live object
+    bool hazardHit =
+        distance(position1_x, position1, main_car_x, main_car_y) < collisionThreshold ||
+        distance(position1_x_1, position2, main_car_x, main_car_y) < collisionThreshold ||
+        distance(position1_x_2, position3, main_car_x, main_car_y) < collisionThreshold ||
+        distance(B1, B2, main_car_x, main_car_y) < collisionThreshold;
 
-    if (distance(H1, position4, main_car_x, main_car_y) < collisionThreshold)
-
-    {
-        increaseLife(); // Increase life if collision with Live object
-
-        return true; // Collision detected with Live object
-    }
-
-/// to make the car invisible
-
-    if (distance(position1_x, position1, main_car_x, main_car_y) < collisionThreshold ||
-
-            distance(position1_x_1, position2, main_car_x, main_car_y) < collisionThreshold ||
-            distance(position1_x_2, position3, main_car_x, main_car_y) < collisionThreshold ||
-            distance(B1, B2, main_car_x, main_car_y) < collisionThreshold)
-
-    {
-
-        if (!collisionOccurred)
-        {
-            collisionOccurred = false;
-            collisionStartTime = time(NULL);
-        }
-
-        return true; // Collision detected with other objects
-
-    }
-
-    // Handle collision duration and life deduction
-
-    if (collisionOccurred)
-
+    if (hazardHit && !damageCooldownActive && lives > 0)
     {
         lives--;
-
-        collisionOccurred = false;
+        damageCooldownActive = true;
+        damageCooldownStartMs = nowMs;
+        collisionEvent = true;
     }
 
-    return false; // No collision detected
+    if (healthPickupAvailable &&
+        distance(H1, position4, main_car_x, main_car_y) < collisionThreshold)
+    {
+        increaseLife();
+        healthPickupAvailable = false;
+        collisionEvent = true;
+    }
+
+    return collisionEvent;
 
 }
 
@@ -233,7 +225,6 @@ void Main_car()
 
     glEnd();
 
-    glEnd();
     glBegin(GL_POLYGON);
 //4 back left big
     glColor3f (0.0f, 1.0f,1.0f);
@@ -309,14 +300,30 @@ void specialKeys(int key, int x, int y) {
             speedtree -= 0.005f; // decrease car speed
             break;
         case GLUT_KEY_LEFT:
-            if (main_car_x > -0.4f) // limit car movement left to -0.4
-                main_car_x -= 0.1f; // move the car left
+            main_car_x -= PLAYER_STEP_X; // move the car left
             break;
         case GLUT_KEY_RIGHT:
-            if (main_car_x < 0.1f) // limit car movement right to +0.2
-                main_car_x += 0.1f; // move the car right
+            main_car_x += PLAYER_STEP_X; // move the car right
             break;
                 }
+
+    if (speedtree < MIN_SCROLL_SPEED)
+    {
+        speedtree = MIN_SCROLL_SPEED;
+    }
+    else if (speedtree > MAX_SCROLL_SPEED)
+    {
+        speedtree = MAX_SCROLL_SPEED;
+    }
+
+    if (main_car_x < PLAYER_MIN_X)
+    {
+        main_car_x = PLAYER_MIN_X;
+    }
+    else if (main_car_x > PLAYER_MAX_X)
+    {
+        main_car_x = PLAYER_MAX_X;
+    }
 
     glutPostRedisplay(); // redraw the scene
 }
@@ -908,7 +915,6 @@ void car1(int a)
 
     glEnd();
 
-    glEnd();
     glBegin(GL_POLYGON);
 //4 back left big
     glColor3f (0.0f, 1.0f,1.0f);
@@ -956,8 +962,6 @@ void car1(int a)
     glVertex2f(0.12f,0.45f);
     glEnd();
     glPopMatrix();
-
-    glutSwapBuffers(); // Swap front and back buffers
 
 }
 
@@ -1032,7 +1036,6 @@ void car2(int c)
 
     glEnd();
 
-    glEnd();
     glBegin(GL_POLYGON);
 //4 back left big
     glColor3f (0.0f, 1.0f,1.0f);
@@ -1080,8 +1083,6 @@ void car2(int c)
     glVertex2f(0.12f,0.45f);
     glEnd();
     glPopMatrix();
-
-    glutSwapBuffers(); // Swap front and back buffers
 
 }
 
@@ -1155,7 +1156,6 @@ void car3(int d)
 
     glEnd();
 
-    glEnd();
     glBegin(GL_POLYGON);
 //4 back left big
     glColor3f (0.0f, 1.0f,1.0f);
@@ -1205,8 +1205,6 @@ void car3(int d)
     glPopMatrix();
     glLoadIdentity();
 
-    glutSwapBuffers(); // Swap front and back buffers
-
 }
 
 /// bomb
@@ -1238,14 +1236,16 @@ void bomb()
     glEnd();
     glPopMatrix();
     glLoadIdentity();
-    glutSwapBuffers();
-
 }
 
 ///live
 
 void health(int a)
 {
+    if (!healthPickupAvailable)
+    {
+        return;
+    }
 
     glPushMatrix();
     glTranslatef(H1, position4, 0.0f); // Apply translation
@@ -1292,8 +1292,6 @@ void health(int a)
     glPopMatrix();
     glLoadIdentity();
 
-    glutSwapBuffers();
-
 }
 
 void update1(int value1) {
@@ -1324,33 +1322,11 @@ void update1(int value1) {
 
     } else {
 
-        // Generate a new random number to determine the type of car
-
-        int randomCar = rand() % 4;
-
-        // Update the position of the car and obstacles based on the random number
-
-        if (randomCar == 0) {
-
-            position1_x = 1.9f;
-
-            B1 = 0.0f;
-
-        } else if (randomCar == 1) {
-
-            position1_x_1 = 1.5f;
-
-        } else if (randomCar == 2) {
-
-            position1_x_2 = 1.5f;
-
-            B1 = 0.0f;
-
-        } else if (randomCar == 3) {
-
-            H1 = 1.5f;
-
-        }
+        position1_x = randomLaneX();
+        position1_x_1 = randomLaneX();
+        position1_x_2 = randomLaneX();
+        B1 = randomLaneX();
+        H1 = randomLaneX();
 
         // Reset positions
 
@@ -1359,6 +1335,7 @@ void update1(int value1) {
         position3 = 1.50f;
         position4 = 1.90f;
         B2 = 1.2f;
+        healthPickupAvailable = true;
 
         // Request a redraw
 
@@ -1391,14 +1368,14 @@ void instruction()
     glColor3f(1.0,1.0,1.0);
     renderBitmapString(-0.1f, 0.22f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "INSTRUCTIOS");
     renderBitmapString(-0.32f, 0.15f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"Press S to start");
-    renderBitmapString(-0.32f, 0.08f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"Press 'W' to speed");
-    renderBitmapString(-0.32f, 0.01f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"Press 'UP, DOWN, LEFT, RIGHT' to move your car");
+    renderBitmapString(-0.32f, 0.08f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"UP = faster, DOWN = slower");
+    renderBitmapString(-0.32f, 0.01f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"LEFT, RIGHT = move your car");
 
 
     renderBitmapString(0.0f, -0.4f, 0.0f,GLUT_BITMAP_TIMES_ROMAN_24,"Press 'X' to go Exit");
 
     //glLoadIdentity();
-    glFlush(); // Render now
+    glutSwapBuffers();
 }
 void coverpage()
 {
@@ -1423,7 +1400,7 @@ void coverpage()
     renderBitmapString(0.0f, -0.4f, 0.0f,GLUT_BITMAP_TIMES_ROMAN_24,"Press 'X' to go Exit");
 
 
-    glFlush(); // Render now
+    glutSwapBuffers();
 }
 
 
@@ -1602,15 +1579,10 @@ void display()
         bomb();
         glLoadIdentity();
 
-        if (checkCollision())
+        checkCollision();
+        if (lives <= 0)
         {
-            if (lives <= 0)
-
-            {
-                glutDisplayFunc(gameoverPage);
-
-            }
-
+            glutDisplayFunc(gameoverPage);
         }
 
     }
@@ -1688,7 +1660,7 @@ void display()
     drawHearts(); // Draw hearts representing lives left
     drawScoreboard();
 
-    glFlush();
+    glutSwapBuffers();
 
 }
 
@@ -1722,8 +1694,10 @@ void sound()
 int main(int argc, char** argv)
 
 {
+    srand(static_cast<unsigned int>(time(NULL)));
 
     glutInit(&argc, argv);
+    glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
     glutInitWindowSize(800, 800);
     glutInitWindowPosition(425, 0);
     glutCreateWindow("Road with Car");
