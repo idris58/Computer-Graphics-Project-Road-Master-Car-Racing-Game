@@ -14,10 +14,10 @@ const float MIN_SCROLL_SPEED = 0.01f;
 const float MAX_SCROLL_SPEED = 0.12f;
 const float PLAYER_MIN_X = -0.425f;
 const float PLAYER_MAX_X = 0.2f;
-const float PLAYER_STEP_X = 0.1f;
 const float LANE_LEFT_X = -0.425f;
 const float LANE_MID_X = -0.1f;
 const float LANE_RIGHT_X = 0.2f;
+int playerLaneIndex = 1;
 /// Score
 int score = 0,s;
 ///Distance
@@ -46,6 +46,19 @@ int damageCooldownStartMs = 0;
 const int DAMAGE_COOLDOWN_MS = 700;
 bool healthPickupAvailable = true;
 
+float laneXFromIndex(int laneIndex)
+{
+    if (laneIndex <= 0)
+    {
+        return LANE_LEFT_X;
+    }
+    if (laneIndex == 1)
+    {
+        return LANE_MID_X;
+    }
+    return LANE_RIGHT_X;
+}
+
 float randomLaneX()
 {
     int lane = rand() % 3;
@@ -58,6 +71,28 @@ float randomLaneX()
         return LANE_MID_X;
     }
     return LANE_RIGHT_X;
+}
+
+int laneIndexForX(float x)
+{
+    float dLeft = fabs(x - LANE_LEFT_X);
+    float dMid = fabs(x - LANE_MID_X);
+    float dRight = fabs(x - LANE_RIGHT_X);
+
+    if (dLeft <= dMid && dLeft <= dRight)
+    {
+        return 0;
+    }
+    if (dMid <= dLeft && dMid <= dRight)
+    {
+        return 1;
+    }
+    return 2;
+}
+
+bool sameLane(float x1, float x2)
+{
+    return laneIndexForX(x1) == laneIndexForX(x2);
 }
 
 float distance(float x1, float y1, float x2, float y2)
@@ -74,7 +109,9 @@ void increaseLife()
 
 bool checkCollision()
 {
-    const float collisionThreshold = 0.14f;
+    const float carCollisionYThreshold = 0.34f;
+    const float pickupCollisionRadius = 0.14f;
+    const float bombCollisionRadius = 0.14f;
     bool collisionEvent = false;
     int nowMs = glutGet(GLUT_ELAPSED_TIME);
 
@@ -83,11 +120,14 @@ bool checkCollision()
         damageCooldownActive = false;
     }
 
-    bool hazardHit =
-        distance(position1_x, position1, main_car_x, main_car_y) < collisionThreshold ||
-        distance(position1_x_1, position2, main_car_x, main_car_y) < collisionThreshold ||
-        distance(position1_x_2, position3, main_car_x, main_car_y) < collisionThreshold ||
-        distance(B1, B2, main_car_x, main_car_y) < collisionThreshold;
+    bool carHazardHit =
+        (sameLane(position1_x, main_car_x) && fabs(position1 - main_car_y) < carCollisionYThreshold) ||
+        (sameLane(position1_x_1, main_car_x) && fabs(position2 - main_car_y) < carCollisionYThreshold) ||
+        (sameLane(position1_x_2, main_car_x) && fabs(position3 - main_car_y) < carCollisionYThreshold);
+
+    bool bombHazardHit = distance(B1 - 0.1f, B2, main_car_x, main_car_y) < bombCollisionRadius;
+
+    bool hazardHit = carHazardHit || bombHazardHit;
 
     if (hazardHit && !damageCooldownActive && lives > 0)
     {
@@ -98,7 +138,7 @@ bool checkCollision()
     }
 
     if (healthPickupAvailable &&
-        distance(H1, position4, main_car_x, main_car_y) < collisionThreshold)
+        distance(H1, position4, main_car_x, main_car_y) < pickupCollisionRadius)
     {
         increaseLife();
         healthPickupAvailable = false;
@@ -162,10 +202,15 @@ void Main_car()
 
     glTranslatef(main_car_x, main_car_y, 0.0f); // Apply translation to the car
 
+    bool damageFlashOn = damageCooldownActive && ((glutGet(GLUT_ELAPSED_TIME) / 80) % 2 == 0);
+    float bodyR = damageFlashOn ? 1.0f : 0.130f;
+    float bodyG = damageFlashOn ? 0.35f : 0.170f;
+    float bodyB = damageFlashOn ? 0.35f : 0.620f;
+
     //down body
     glScalef(.6,1.3,0);
     glBegin(GL_POLYGON);
-    glColor3f(0.130f, 0.170f, 0.620f);
+    glColor3f(bodyR, bodyG, bodyB);
 
     glVertex2f(0.08f,0.10f);
     glVertex2f(0.09f,0.09f);
@@ -176,6 +221,7 @@ void Main_car()
     glEnd();
     //mid body
     glBegin(GL_POLYGON);
+    glColor3f(bodyR, bodyG, bodyB);
     glVertex2f(0.26f,0.10f);
     glVertex2f(0.26f,0.44f);
     glVertex2f(0.25f,0.45f);
@@ -187,6 +233,7 @@ void Main_car()
     glEnd();
     //uper body
     glBegin(GL_POLYGON);
+    glColor3f(bodyR, bodyG, bodyB);
     glVertex2f(0.26f,0.44f);
     glVertex2f(0.25f,0.45f);
     glVertex2f(0.09f,0.45f);
@@ -300,10 +347,18 @@ void specialKeys(int key, int x, int y) {
             speedtree -= 0.005f; // decrease car speed
             break;
         case GLUT_KEY_LEFT:
-            main_car_x -= PLAYER_STEP_X; // move the car left
+            if (playerLaneIndex > 0)
+            {
+                playerLaneIndex--;
+            }
+            main_car_x = laneXFromIndex(playerLaneIndex);
             break;
         case GLUT_KEY_RIGHT:
-            main_car_x += PLAYER_STEP_X; // move the car right
+            if (playerLaneIndex < 2)
+            {
+                playerLaneIndex++;
+            }
+            main_car_x = laneXFromIndex(playerLaneIndex);
             break;
                 }
 

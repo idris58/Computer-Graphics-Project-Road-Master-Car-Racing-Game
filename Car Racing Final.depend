@@ -876,9 +876,11 @@
 1526093414 c:\program files\codeblocks\mingw\x86_64-w64-mingw32\include\gl\glu.h
 	<GL/gl.h>
 
-1771699555 source:c:\users\sm idris\source\repos\computer-graphics-project-road-master-car-racing-game\main.cpp
+1771700977 source:c:\users\sm idris\source\repos\computer-graphics-project-road-master-car-racing-game\main.cpp
 	<windows.h>
 	<GL/glut.h>
 	<iostream>
 	<cmath>
+	<ctime>
+	<cstdlib>
 
