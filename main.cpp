@@ -12,11 +12,13 @@ GLfloat positiontree = 2.0f;
 GLfloat speedtree = 0.029f;
 const float MIN_SCROLL_SPEED = 0.01f;
 const float MAX_SCROLL_SPEED = 0.12f;
-const float PLAYER_MIN_X = -0.425f;
-const float PLAYER_MAX_X = 0.2f;
-const float LANE_LEFT_X = -0.425f;
-const float LANE_MID_X = -0.1f;
-const float LANE_RIGHT_X = 0.2f;
+const float LANE_1_X = -0.30f;
+const float LANE_2_X = -0.10f;
+const float LANE_3_X = 0.10f;
+const float LANE_4_X = 0.30f;
+const float PLAYER_MIN_X = LANE_1_X;
+const float PLAYER_MAX_X = LANE_4_X;
+const float CAR_ANCHOR_X = 0.102f;
 int playerLaneIndex = 1;
 /// Score
 int score = 0,s;
@@ -25,21 +27,21 @@ float distancee = 0.0f,d;
 float moveAmount = 0.001f; // Initial amount of movement in each step
 bool moveLeft = false; //   indicate whether the car is moving left
 bool moveRight = false; //   indicate whether the car is moving right
-//mid point of the car
-float main_car_x = LANE_MID_X; // Initial x position
+// X value represents the lane center for collision/spawn logic.
+float main_car_x = LANE_2_X; // Initial x position
 float main_car_y = -0.8; // Initial y position
-float position1_x = LANE_RIGHT_X;
+float position1_x = LANE_4_X;
 float position1 = 0.0f;
 float position2 = 1.20f;
 float position3 = 1.50f;
 float position4 = 1.90f;
-float position1_x_1 = LANE_LEFT_X;
-float position1_x_2 = LANE_MID_X;
+float position1_x_1 = LANE_1_X;
+float position1_x_2 = LANE_3_X;
 
-float H1 = LANE_MID_X;
+float H1 = LANE_3_X;
 
 int lives = 3;
-float B1 = LANE_RIGHT_X;
+float B1 = LANE_2_X;
 float B2=1.2f;
 bool damageCooldownActive = false;
 int damageCooldownStartMs = 0;
@@ -50,44 +52,54 @@ float laneXFromIndex(int laneIndex)
 {
     if (laneIndex <= 0)
     {
-        return LANE_LEFT_X;
+        return LANE_1_X;
     }
     if (laneIndex == 1)
     {
-        return LANE_MID_X;
+        return LANE_2_X;
     }
-    return LANE_RIGHT_X;
+    if (laneIndex == 2)
+    {
+        return LANE_3_X;
+    }
+    return LANE_4_X;
 }
 
 float randomLaneX()
 {
-    int lane = rand() % 3;
-    if (lane == 0)
+    return laneXFromIndex(rand() % 4);
+}
+
+void assignUniqueEnemyLanes(float &laneA, float &laneB, float &laneC)
+{
+    int lanes[4] = {0, 1, 2, 3};
+
+    for (int i = 3; i > 0; --i)
     {
-        return LANE_LEFT_X;
+        int j = rand() % (i + 1);
+        int temp = lanes[i];
+        lanes[i] = lanes[j];
+        lanes[j] = temp;
     }
-    if (lane == 1)
-    {
-        return LANE_MID_X;
-    }
-    return LANE_RIGHT_X;
+
+    laneA = laneXFromIndex(lanes[0]);
+    laneB = laneXFromIndex(lanes[1]);
+    laneC = laneXFromIndex(lanes[2]);
 }
 
 int laneIndexForX(float x)
 {
-    float dLeft = fabs(x - LANE_LEFT_X);
-    float dMid = fabs(x - LANE_MID_X);
-    float dRight = fabs(x - LANE_RIGHT_X);
+    float d0 = fabs(x - LANE_1_X);
+    float d1 = fabs(x - LANE_2_X);
+    float d2 = fabs(x - LANE_3_X);
+    float d3 = fabs(x - LANE_4_X);
 
-    if (dLeft <= dMid && dLeft <= dRight)
-    {
-        return 0;
-    }
-    if (dMid <= dLeft && dMid <= dRight)
-    {
-        return 1;
-    }
-    return 2;
+    int bestIndex = 0;
+    float bestDist = d0;
+    if (d1 < bestDist) { bestDist = d1; bestIndex = 1; }
+    if (d2 < bestDist) { bestDist = d2; bestIndex = 2; }
+    if (d3 < bestDist) { bestIndex = 3; }
+    return bestIndex;
 }
 
 bool sameLane(float x1, float x2)
@@ -109,9 +121,9 @@ void increaseLife()
 
 bool checkCollision()
 {
-    const float carCollisionYThreshold = 0.34f;
+    const float carCollisionYThreshold = 0.24f;
     const float pickupCollisionRadius = 0.14f;
-    const float bombCollisionRadius = 0.14f;
+    const float bombCollisionYThreshold = 0.18f;
     bool collisionEvent = false;
     int nowMs = glutGet(GLUT_ELAPSED_TIME);
 
@@ -125,7 +137,9 @@ bool checkCollision()
         (sameLane(position1_x_1, main_car_x) && fabs(position2 - main_car_y) < carCollisionYThreshold) ||
         (sameLane(position1_x_2, main_car_x) && fabs(position3 - main_car_y) < carCollisionYThreshold);
 
-    bool bombHazardHit = distance(B1 - 0.1f, B2, main_car_x, main_car_y) < bombCollisionRadius;
+    bool bombHazardHit =
+        sameLane(B1, main_car_x) &&
+        fabs(B2 - main_car_y) < bombCollisionYThreshold;
 
     bool hazardHit = carHazardHit || bombHazardHit;
 
@@ -200,7 +214,7 @@ void Main_car()
 
     glPushMatrix(); // Save current matrix
 
-    glTranslatef(main_car_x, main_car_y, 0.0f); // Apply translation to the car
+    glTranslatef(main_car_x - CAR_ANCHOR_X, main_car_y, 0.0f); // Apply translation to lane center
 
     bool damageFlashOn = damageCooldownActive && ((glutGet(GLUT_ELAPSED_TIME) / 80) % 2 == 0);
     float bodyR = damageFlashOn ? 1.0f : 0.130f;
@@ -354,7 +368,7 @@ void specialKeys(int key, int x, int y) {
             main_car_x = laneXFromIndex(playerLaneIndex);
             break;
         case GLUT_KEY_RIGHT:
-            if (playerLaneIndex < 2)
+            if (playerLaneIndex < 3)
             {
                 playerLaneIndex++;
             }
@@ -908,8 +922,8 @@ void car1(int a)
 
     //down body
     glPushMatrix();
+    glTranslatef(position1_x - CAR_ANCHOR_X, position1, 0.0f);
     glScalef(.6,1.3,0);
-    glTranslatef(position1_x,position1, 0.0f);
     glBegin(GL_POLYGON);
     glColor3f(1.0f,1.9f,0.42f);
     glVertex2f(0.08f,0.10f);
@@ -1028,8 +1042,8 @@ void car2(int c)
 
     //down body
     glPushMatrix();
+    glTranslatef(position1_x_1 - CAR_ANCHOR_X, position2, 0.0f);
     glScalef(0.6,1.3,0);
-    glTranslatef(position1_x_1,position2, 0.0f);
     glBegin(GL_POLYGON);
     glColor3f(1.92f,0.14f,0.260f);
 
@@ -1149,8 +1163,8 @@ void car3(int d)
     glLoadIdentity();
     //down body
     glPushMatrix();
+    glTranslatef(position1_x_2 - CAR_ANCHOR_X, position3, 0.0f);
     glScalef(.6,1.3,0);
-    glTranslatef(position1_x_2, position3, 0.0f);
     glBegin(GL_POLYGON);
     glColor3f(0.58f,0.42f,0.27f);
     glVertex2f(0.08f,0.10f);
@@ -1270,7 +1284,7 @@ void bomb()
     // Draw bomb body
 
     glPushMatrix();
-    glTranslatef(-0.1+B1, B2, 0.0f); // Apply translation
+    glTranslatef(B1 - 0.171f, B2, 0.0f); // Center bomb on selected lane
     glScalef(0.38,0.38,0);
     glBegin(GL_POLYGON);
     glColor3ub(255,154,0);
@@ -1377,9 +1391,7 @@ void update1(int value1) {
 
     } else {
 
-        position1_x = randomLaneX();
-        position1_x_1 = randomLaneX();
-        position1_x_2 = randomLaneX();
+        assignUniqueEnemyLanes(position1_x, position1_x_1, position1_x_2);
         B1 = randomLaneX();
         H1 = randomLaneX();
 
@@ -1623,11 +1635,7 @@ void display()
         Main_car();
         /// call function which will mov
         car1(0);
-        glPushMatrix();
-        glTranslatef(0.06, 0.0, 0.0f);
         car2(0);
-        glLoadIdentity();
-        glPopMatrix();
 
         car3(0);
         health(0);
