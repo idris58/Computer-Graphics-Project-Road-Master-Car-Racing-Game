@@ -4,6 +4,8 @@
 #include <cmath>
 #include <ctime>
 #include <cstdlib>
+#include <fstream>
+#include <string>
 
 using namespace std;
 
@@ -19,7 +21,11 @@ const float LANE_4_X = 0.30f;
 const float PLAYER_MIN_X = LANE_1_X;
 const float PLAYER_MAX_X = LANE_4_X;
 const float CAR_ANCHOR_X = 0.102f;
+const float PLAYER_LANE_CHANGE_SPEED = 0.025f;
+const float BASE_ENEMY_SPEED = 0.05f;
+const float MAX_DIFFICULTY_MULTIPLIER = 2.6f;
 int playerLaneIndex = 1;
+int targetPlayerLaneIndex = 1;
 /// Score
 int score = 0,s;
 ///Distance
@@ -47,6 +53,29 @@ bool damageCooldownActive = false;
 int damageCooldownStartMs = 0;
 const int DAMAGE_COOLDOWN_MS = 700;
 bool healthPickupAvailable = true;
+float difficultyMultiplier = 1.0f;
+bool isPaused = false;
+bool showHitboxes = false;
+int bestScore = 0;
+
+const float CAR_CENTER_OFFSET_Y = 0.351f;
+const float BOMB_CENTER_OFFSET_Y = 0.19f;
+const float HEART_CENTER_OFFSET_Y = 0.026f;
+const float CAR_HITBOX_HALF_W = 0.048f;
+const float CAR_HITBOX_HALF_H = 0.21f;
+const float BOMB_HITBOX_HALF_W = 0.050f;
+const float BOMB_HITBOX_HALF_H = 0.050f;
+const float HEART_HITBOX_HALF_W = 0.032f;
+const float HEART_HITBOX_HALF_H = 0.032f;
+const char* BEST_SCORE_FILE = "best_score.txt";
+
+struct Hitbox
+{
+    float cx;
+    float cy;
+    float halfW;
+    float halfH;
+};
 
 float laneXFromIndex(int laneIndex)
 {
@@ -87,6 +116,125 @@ void assignUniqueEnemyLanes(float &laneA, float &laneB, float &laneC)
     laneC = laneXFromIndex(lanes[2]);
 }
 
+void updateDifficultyFromProgress()
+{
+    float scoreFactor = static_cast<float>(score) * 0.0012f;
+    float distanceFactor = distancee * 0.008f;
+    float combined = 1.0f + scoreFactor + distanceFactor;
+    if (combined > MAX_DIFFICULTY_MULTIPLIER)
+    {
+        combined = MAX_DIFFICULTY_MULTIPLIER;
+    }
+    difficultyMultiplier = combined;
+}
+
+Hitbox makeCarHitbox(float laneX, float baseY)
+{
+    Hitbox box;
+    box.cx = laneX;
+    box.cy = baseY + CAR_CENTER_OFFSET_Y;
+    box.halfW = CAR_HITBOX_HALF_W;
+    box.halfH = CAR_HITBOX_HALF_H;
+    return box;
+}
+
+Hitbox makeBombHitbox(float laneX, float baseY)
+{
+    Hitbox box;
+    box.cx = laneX;
+    box.cy = baseY + BOMB_CENTER_OFFSET_Y;
+    box.halfW = BOMB_HITBOX_HALF_W;
+    box.halfH = BOMB_HITBOX_HALF_H;
+    return box;
+}
+
+Hitbox makeHeartHitbox(float laneX, float baseY)
+{
+    Hitbox box;
+    box.cx = laneX;
+    box.cy = baseY + HEART_CENTER_OFFSET_Y;
+    box.halfW = HEART_HITBOX_HALF_W;
+    box.halfH = HEART_HITBOX_HALF_H;
+    return box;
+}
+
+bool hitboxesOverlap(const Hitbox &a, const Hitbox &b)
+{
+    return fabs(a.cx - b.cx) <= (a.halfW + b.halfW) &&
+           fabs(a.cy - b.cy) <= (a.halfH + b.halfH);
+}
+
+void drawHitbox(const Hitbox &b, float r, float g, float blue)
+{
+    glColor3f(r, g, blue);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(b.cx - b.halfW, b.cy - b.halfH);
+    glVertex2f(b.cx + b.halfW, b.cy - b.halfH);
+    glVertex2f(b.cx + b.halfW, b.cy + b.halfH);
+    glVertex2f(b.cx - b.halfW, b.cy + b.halfH);
+    glEnd();
+}
+
+void loadBestScore()
+{
+    std::ifstream fin(BEST_SCORE_FILE);
+    if (!(fin >> bestScore))
+    {
+        bestScore = 0;
+    }
+}
+
+void saveBestScore()
+{
+    std::ofstream fout(BEST_SCORE_FILE, std::ios::trunc);
+    if (fout)
+    {
+        fout << bestScore;
+    }
+}
+
+void updateBestScoreIfNeeded()
+{
+    if (score > bestScore)
+    {
+        bestScore = score;
+        saveBestScore();
+    }
+}
+
+void resetGameState()
+{
+    score = 0;
+    distancee = 0.0f;
+    lives = 3;
+
+    playerLaneIndex = 1;
+    targetPlayerLaneIndex = 1;
+    main_car_x = laneXFromIndex(playerLaneIndex);
+    main_car_y = -0.8f;
+
+    position1 = 0.0f;
+    position2 = 1.20f;
+    position3 = 1.50f;
+    position4 = 1.90f;
+    B2 = 1.2f;
+
+    assignUniqueEnemyLanes(position1_x, position1_x_1, position1_x_2);
+    B1 = randomLaneX();
+    H1 = randomLaneX();
+    while (B1 == H1)
+    {
+        H1 = randomLaneX();
+    }
+
+    speedtree = 0.029f;
+    damageCooldownActive = false;
+    damageCooldownStartMs = 0;
+    healthPickupAvailable = true;
+    difficultyMultiplier = 1.0f;
+    isPaused = false;
+}
+
 int laneIndexForX(float x)
 {
     float d0 = fabs(x - LANE_1_X);
@@ -121,11 +269,13 @@ void increaseLife()
 
 bool checkCollision()
 {
-    const float carCollisionYThreshold = 0.24f;
-    const float pickupCollisionRadius = 0.14f;
-    const float bombCollisionYThreshold = 0.18f;
     bool collisionEvent = false;
     int nowMs = glutGet(GLUT_ELAPSED_TIME);
+    Hitbox playerBox = makeCarHitbox(main_car_x, main_car_y);
+    Hitbox enemy1Box = makeCarHitbox(position1_x, position1);
+    Hitbox enemy2Box = makeCarHitbox(position1_x_1, position2);
+    Hitbox enemy3Box = makeCarHitbox(position1_x_2, position3);
+    Hitbox bombBox = makeBombHitbox(B1, B2);
 
     if (damageCooldownActive && (nowMs - damageCooldownStartMs >= DAMAGE_COOLDOWN_MS))
     {
@@ -133,13 +283,11 @@ bool checkCollision()
     }
 
     bool carHazardHit =
-        (sameLane(position1_x, main_car_x) && fabs(position1 - main_car_y) < carCollisionYThreshold) ||
-        (sameLane(position1_x_1, main_car_x) && fabs(position2 - main_car_y) < carCollisionYThreshold) ||
-        (sameLane(position1_x_2, main_car_x) && fabs(position3 - main_car_y) < carCollisionYThreshold);
+        hitboxesOverlap(playerBox, enemy1Box) ||
+        hitboxesOverlap(playerBox, enemy2Box) ||
+        hitboxesOverlap(playerBox, enemy3Box);
 
-    bool bombHazardHit =
-        sameLane(B1, main_car_x) &&
-        fabs(B2 - main_car_y) < bombCollisionYThreshold;
+    bool bombHazardHit = hitboxesOverlap(playerBox, bombBox);
 
     bool hazardHit = carHazardHit || bombHazardHit;
 
@@ -149,14 +297,21 @@ bool checkCollision()
         damageCooldownActive = true;
         damageCooldownStartMs = nowMs;
         collisionEvent = true;
+        if (lives <= 0)
+        {
+            updateBestScoreIfNeeded();
+        }
     }
 
-    if (healthPickupAvailable &&
-        distance(H1, position4, main_car_x, main_car_y) < pickupCollisionRadius)
+    if (healthPickupAvailable)
     {
-        increaseLife();
-        healthPickupAvailable = false;
-        collisionEvent = true;
+        Hitbox heartBox = makeHeartHitbox(H1, position4);
+        if (hitboxesOverlap(playerBox, heartBox))
+        {
+            increaseLife();
+            healthPickupAvailable = false;
+            collisionEvent = true;
+        }
     }
 
     return collisionEvent;
@@ -209,23 +364,11 @@ void drawHearts()
 }
 
 ///main car movement
-void Main_car()
+void drawCarShape(float bodyR, float bodyG, float bodyB)
 {
-
-    glPushMatrix(); // Save current matrix
-
-    glTranslatef(main_car_x - CAR_ANCHOR_X, main_car_y, 0.0f); // Apply translation to lane center
-
-    bool damageFlashOn = damageCooldownActive && ((glutGet(GLUT_ELAPSED_TIME) / 80) % 2 == 0);
-    float bodyR = damageFlashOn ? 1.0f : 0.130f;
-    float bodyG = damageFlashOn ? 0.35f : 0.170f;
-    float bodyB = damageFlashOn ? 0.35f : 0.620f;
-
-    //down body
-    glScalef(.6,1.3,0);
+    // down body
     glBegin(GL_POLYGON);
     glColor3f(bodyR, bodyG, bodyB);
-
     glVertex2f(0.08f,0.10f);
     glVertex2f(0.09f,0.09f);
     glVertex2f(0.25f,0.09f);
@@ -233,7 +376,8 @@ void Main_car()
     glVertex2f(0.25f,0.08f);
     glVertex2f(0.09f,0.08f);
     glEnd();
-    //mid body
+
+    // mid body
     glBegin(GL_POLYGON);
     glColor3f(bodyR, bodyG, bodyB);
     glVertex2f(0.26f,0.10f);
@@ -245,7 +389,8 @@ void Main_car()
     glVertex2f(0.09f,0.09f);
     glVertex2f(0.25f,0.09f);
     glEnd();
-    //uper body
+
+    // upper body
     glBegin(GL_POLYGON);
     glColor3f(bodyR, bodyG, bodyB);
     glVertex2f(0.26f,0.44f);
@@ -255,9 +400,9 @@ void Main_car()
     glVertex2f(0.09f,0.46f);
     glVertex2f(0.25f,0.46f);
     glEnd();
-    //windows
+
+    // windows
     glBegin(GL_POLYGON);
-    //1 back
     glColor3f (0.0f, 1.0f,1.0f);
     glVertex2f(0.11f,0.14f);
     glVertex2f(0.23f,0.14f);
@@ -268,36 +413,30 @@ void Main_car()
     glEnd();
 
     glBegin(GL_POLYGON);
-    //2 back right small
     glColor3f (0.0f, 1.0f,1.0f);
     glVertex2f(0.25f,0.14f);
     glVertex2f(0.25f,0.19f);
     glVertex2f(0.23f,0.19f);
     glVertex2f(0.23f,0.16f);
-
     glEnd();
+
     glBegin(GL_POLYGON);
-//3 back left small
     glColor3f (0.0f, 1.0f,1.0f);
     glVertex2f(0.09f,0.14f);
     glVertex2f(0.09f,0.19f);
     glVertex2f(0.11f,0.19f);
     glVertex2f(0.11f,0.16f);
-
     glEnd();
 
     glBegin(GL_POLYGON);
-//4 back left big
     glColor3f (0.0f, 1.0f,1.0f);
     glVertex2f(0.09f,0.21f);
     glVertex2f(0.09f,0.33f);
     glVertex2f(0.11f,0.29f);
     glVertex2f(0.11f,0.21f);
-
     glEnd();
 
     glBegin(GL_POLYGON);
-//4 back Right big
     glColor3f (0.0f, 1.0f,1.0f);
     glVertex2f(0.25f,0.21f);
     glVertex2f(0.25f,0.33f);
@@ -306,7 +445,6 @@ void Main_car()
     glEnd();
 
     glBegin(GL_POLYGON);
-//5 Fornt
     glColor3f (0.0f, 1.0f,1.0f);
     glVertex2f(0.23f,0.33f);
     glVertex2f(0.11f,0.33f);
@@ -317,24 +455,36 @@ void Main_car()
     glEnd();
 
     glBegin(GL_POLYGON);
-//6  Right light
     glColor3f (1.0f, 1.0f,1.0f);
     glVertex2f(0.23f,0.43f);
     glVertex2f(0.25f,0.43f);
     glVertex2f(0.23f,0.45f);
-
     glEnd();
 
     glBegin(GL_POLYGON);
-//7 left light
     glColor3f (1.0f, 1.0f,1.0f);
     glVertex2f(0.12f,0.43f);
     glVertex2f(0.10f,0.43f);
     glVertex2f(0.12f,0.45f);
     glEnd();
-    glPopMatrix();
-    glLoadIdentity();
+}
 
+void drawCar(float laneCenterX, float y, float bodyR, float bodyG, float bodyB)
+{
+    glPushMatrix();
+    glTranslatef(laneCenterX - CAR_ANCHOR_X, y, 0.0f);
+    glScalef(0.6f, 1.3f, 0.0f);
+    drawCarShape(bodyR, bodyG, bodyB);
+    glPopMatrix();
+}
+
+void Main_car()
+{
+    bool damageFlashOn = damageCooldownActive && ((glutGet(GLUT_ELAPSED_TIME) / 80) % 2 == 0);
+    float bodyR = damageFlashOn ? 1.0f : 0.130f;
+    float bodyG = damageFlashOn ? 0.35f : 0.170f;
+    float bodyB = damageFlashOn ? 0.35f : 0.620f;
+    drawCar(main_car_x, main_car_y, bodyR, bodyG, bodyB);
 }
 
 
@@ -353,6 +503,11 @@ GLfloat speed3 = 0.05f;
 GLfloat speed4 = 0.05f;
 ///My car movement
 void specialKeys(int key, int x, int y) {
+    if (isPaused || lives <= 0)
+    {
+        return;
+    }
+
     switch (key) {
         case GLUT_KEY_UP:
             speedtree += 0.005f; // increase car speed
@@ -361,18 +516,16 @@ void specialKeys(int key, int x, int y) {
             speedtree -= 0.005f; // decrease car speed
             break;
         case GLUT_KEY_LEFT:
-            if (playerLaneIndex > 0)
+            if (targetPlayerLaneIndex > 0)
             {
-                playerLaneIndex--;
+                targetPlayerLaneIndex--;
             }
-            main_car_x = laneXFromIndex(playerLaneIndex);
             break;
         case GLUT_KEY_RIGHT:
-            if (playerLaneIndex < 3)
+            if (targetPlayerLaneIndex < 3)
             {
-                playerLaneIndex++;
+                targetPlayerLaneIndex++;
             }
-            main_car_x = laneXFromIndex(playerLaneIndex);
             break;
                 }
 
@@ -385,15 +538,6 @@ void specialKeys(int key, int x, int y) {
         speedtree = MAX_SCROLL_SPEED;
     }
 
-    if (main_car_x < PLAYER_MIN_X)
-    {
-        main_car_x = PLAYER_MIN_X;
-    }
-    else if (main_car_x > PLAYER_MAX_X)
-    {
-        main_car_x = PLAYER_MAX_X;
-    }
-
     glutPostRedisplay(); // redraw the scene
 }
 
@@ -402,6 +546,25 @@ void specialKeys(int key, int x, int y) {
 
 void update(int value)
 {
+    if (isPaused)
+    {
+        glutPostRedisplay();
+        glutTimerFunc(50, update, 0);
+        return;
+    }
+
+    float targetX = laneXFromIndex(targetPlayerLaneIndex);
+    float dx = targetX - main_car_x;
+    if (fabs(dx) <= PLAYER_LANE_CHANGE_SPEED)
+    {
+        main_car_x = targetX;
+        playerLaneIndex = targetPlayerLaneIndex;
+    }
+    else
+    {
+        main_car_x += (dx > 0.0f ? PLAYER_LANE_CHANGE_SPEED : -PLAYER_LANE_CHANGE_SPEED);
+    }
+
     if(positiontree <-1.0)
         positiontree = 1.0f;
     positiontree -= speedtree;
@@ -919,119 +1082,7 @@ void Home1(float x, float y,float z)
 void car1(int a)
 
 {
-
-    //down body
-    glPushMatrix();
-    glTranslatef(position1_x - CAR_ANCHOR_X, position1, 0.0f);
-    glScalef(.6,1.3,0);
-    glBegin(GL_POLYGON);
-    glColor3f(1.0f,1.9f,0.42f);
-    glVertex2f(0.08f,0.10f);
-    glVertex2f(0.09f,0.09f);
-    glVertex2f(0.25f,0.09f);
-    glVertex2f(0.26f,0.10f);
-    glVertex2f(0.25f,0.08f);
-    glVertex2f(0.09f,0.08f);
-    glEnd();
-//mid body
-    glBegin(GL_POLYGON);
-    glVertex2f(0.26f,0.10f);
-    glVertex2f(0.26f,0.44f);
-    glVertex2f(0.25f,0.45f);
-    glVertex2f(0.09f,0.45f);
-    glVertex2f(0.08f,0.44f);
-    glVertex2f(0.08f,0.10f);
-    glVertex2f(0.09f,0.09f);
-    glVertex2f(0.25f,0.09f);
-    glEnd();
-//uper body
-    glBegin(GL_POLYGON);
-    glVertex2f(0.26f,0.44f);
-    glVertex2f(0.25f,0.45f);
-    glVertex2f(0.09f,0.45f);
-    glVertex2f(0.08f,0.44f);
-    glVertex2f(0.09f,0.46f);
-    glVertex2f(0.25f,0.46f);
-    glEnd();
-//windows
-    glBegin(GL_POLYGON);
-//1 back
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.11f,0.14f);
-    glVertex2f(0.23f,0.14f);
-    glVertex2f(0.24f,0.12f);
-    glVertex2f(0.22f,0.11f);
-    glVertex2f(0.123f,0.11f);
-    glVertex2f(0.10f,0.12f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//2 back right small
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.25f,0.14f);
-    glVertex2f(0.25f,0.19f);
-    glVertex2f(0.23f,0.19f);
-    glVertex2f(0.23f,0.16f);
-
-    glEnd();
-    glBegin(GL_POLYGON);
-//3 back left small
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.09f,0.14f);
-    glVertex2f(0.09f,0.19f);
-    glVertex2f(0.11f,0.19f);
-    glVertex2f(0.11f,0.16f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//4 back left big
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.09f,0.21f);
-    glVertex2f(0.09f,0.33f);
-    glVertex2f(0.11f,0.29f);
-    glVertex2f(0.11f,0.21f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//4 back Right big
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.25f,0.21f);
-    glVertex2f(0.25f,0.33f);
-    glVertex2f(0.23f,0.29f);
-    glVertex2f(0.23f,0.21f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//5 Fornt
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.23f,0.33f);
-    glVertex2f(0.11f,0.33f);
-    glVertex2f(0.10f,0.34f);
-    glVertex2f(0.09f,0.38f);
-    glVertex2f(0.25f,0.38f);
-    glVertex2f(0.24f,0.34f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//6  Right light
-    glColor3f (1.0f, 1.0f,1.0f);
-    glVertex2f(0.23f,0.43f);
-    glVertex2f(0.25f,0.43f);
-    glVertex2f(0.23f,0.45f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//7 left light
-    glColor3f (1.0f, 1.0f,1.0f);
-    glVertex2f(0.12f,0.43f);
-    glVertex2f(0.10f,0.43f);
-    glVertex2f(0.12f,0.45f);
-    glEnd();
-    glPopMatrix();
-
+    drawCar(position1_x, position1, 1.0f, 0.90f, 0.42f);
 }
 
 /// car 2
@@ -1039,120 +1090,7 @@ void car1(int a)
 void car2(int c)
 
 {
-
-    //down body
-    glPushMatrix();
-    glTranslatef(position1_x_1 - CAR_ANCHOR_X, position2, 0.0f);
-    glScalef(0.6,1.3,0);
-    glBegin(GL_POLYGON);
-    glColor3f(1.92f,0.14f,0.260f);
-
-    glVertex2f(0.08f,0.10f);
-    glVertex2f(0.09f,0.09f);
-    glVertex2f(0.25f,0.09f);
-    glVertex2f(0.26f,0.10f);
-    glVertex2f(0.25f,0.08f);
-    glVertex2f(0.09f,0.08f);
-    glEnd();
-//mid body
-    glBegin(GL_POLYGON);
-    glVertex2f(0.26f,0.10f);
-    glVertex2f(0.26f,0.44f);
-    glVertex2f(0.25f,0.45f);
-    glVertex2f(0.09f,0.45f);
-    glVertex2f(0.08f,0.44f);
-    glVertex2f(0.08f,0.10f);
-    glVertex2f(0.09f,0.09f);
-    glVertex2f(0.25f,0.09f);
-    glEnd();
-//uper body
-    glBegin(GL_POLYGON);
-    glVertex2f(0.26f,0.44f);
-    glVertex2f(0.25f,0.45f);
-    glVertex2f(0.09f,0.45f);
-    glVertex2f(0.08f,0.44f);
-    glVertex2f(0.09f,0.46f);
-    glVertex2f(0.25f,0.46f);
-    glEnd();
-//windows
-    glBegin(GL_POLYGON);
-//1 back
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.11f,0.14f);
-    glVertex2f(0.23f,0.14f);
-    glVertex2f(0.24f,0.12f);
-    glVertex2f(0.22f,0.11f);
-    glVertex2f(0.123f,0.11f);
-    glVertex2f(0.10f,0.12f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//2 back right small
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.25f,0.14f);
-    glVertex2f(0.25f,0.19f);
-    glVertex2f(0.23f,0.19f);
-    glVertex2f(0.23f,0.16f);
-
-    glEnd();
-    glBegin(GL_POLYGON);
-//3 back left small
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.09f,0.14f);
-    glVertex2f(0.09f,0.19f);
-    glVertex2f(0.11f,0.19f);
-    glVertex2f(0.11f,0.16f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//4 back left big
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.09f,0.21f);
-    glVertex2f(0.09f,0.33f);
-    glVertex2f(0.11f,0.29f);
-    glVertex2f(0.11f,0.21f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//4 back Right big
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.25f,0.21f);
-    glVertex2f(0.25f,0.33f);
-    glVertex2f(0.23f,0.29f);
-    glVertex2f(0.23f,0.21f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//5 Fornt
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.23f,0.33f);
-    glVertex2f(0.11f,0.33f);
-    glVertex2f(0.10f,0.34f);
-    glVertex2f(0.09f,0.38f);
-    glVertex2f(0.25f,0.38f);
-    glVertex2f(0.24f,0.34f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//6  Right light
-    glColor3f (1.0f, 1.0f,1.0f);
-    glVertex2f(0.23f,0.43f);
-    glVertex2f(0.25f,0.43f);
-    glVertex2f(0.23f,0.45f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//7 left light
-    glColor3f (1.0f, 1.0f,1.0f);
-    glVertex2f(0.12f,0.43f);
-    glVertex2f(0.10f,0.43f);
-    glVertex2f(0.12f,0.45f);
-    glEnd();
-    glPopMatrix();
-
+    drawCar(position1_x_1, position2, 1.0f, 0.14f, 0.26f);
 }
 
 /// car 3
@@ -1160,120 +1098,7 @@ void car2(int c)
 void car3(int d)
 
 {
-    glLoadIdentity();
-    //down body
-    glPushMatrix();
-    glTranslatef(position1_x_2 - CAR_ANCHOR_X, position3, 0.0f);
-    glScalef(.6,1.3,0);
-    glBegin(GL_POLYGON);
-    glColor3f(0.58f,0.42f,0.27f);
-    glVertex2f(0.08f,0.10f);
-    glVertex2f(0.09f,0.09f);
-    glVertex2f(0.25f,0.09f);
-    glVertex2f(0.26f,0.10f);
-    glVertex2f(0.25f,0.08f);
-    glVertex2f(0.09f,0.08f);
-    glEnd();
-    //mid body
-    glBegin(GL_POLYGON);
-    glVertex2f(0.26f,0.10f);
-    glVertex2f(0.26f,0.44f);
-    glVertex2f(0.25f,0.45f);
-    glVertex2f(0.09f,0.45f);
-    glVertex2f(0.08f,0.44f);
-    glVertex2f(0.08f,0.10f);
-    glVertex2f(0.09f,0.09f);
-    glVertex2f(0.25f,0.09f);
-    glEnd();
-//uper body
-    glBegin(GL_POLYGON);
-    glVertex2f(0.26f,0.44f);
-    glVertex2f(0.25f,0.45f);
-    glVertex2f(0.09f,0.45f);
-    glVertex2f(0.08f,0.44f);
-    glVertex2f(0.09f,0.46f);
-    glVertex2f(0.25f,0.46f);
-    glEnd();
-//windows
-    glBegin(GL_POLYGON);
-//1 back
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.11f,0.14f);
-    glVertex2f(0.23f,0.14f);
-    glVertex2f(0.24f,0.12f);
-    glVertex2f(0.22f,0.11f);
-    glVertex2f(0.123f,0.11f);
-    glVertex2f(0.10f,0.12f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//2 back right small
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.25f,0.14f);
-    glVertex2f(0.25f,0.19f);
-    glVertex2f(0.23f,0.19f);
-    glVertex2f(0.23f,0.16f);
-
-    glEnd();
-    glBegin(GL_POLYGON);
-//3 back left small
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.09f,0.14f);
-    glVertex2f(0.09f,0.19f);
-    glVertex2f(0.11f,0.19f);
-    glVertex2f(0.11f,0.16f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//4 back left big
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.09f,0.21f);
-    glVertex2f(0.09f,0.33f);
-    glVertex2f(0.11f,0.29f);
-    glVertex2f(0.11f,0.21f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//4 back Right big
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.25f,0.21f);
-    glVertex2f(0.25f,0.33f);
-    glVertex2f(0.23f,0.29f);
-    glVertex2f(0.23f,0.21f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//5 Fornt
-    glColor3f (0.0f, 1.0f,1.0f);
-    glVertex2f(0.23f,0.33f);
-    glVertex2f(0.11f,0.33f);
-    glVertex2f(0.10f,0.34f);
-    glVertex2f(0.09f,0.38f);
-    glVertex2f(0.25f,0.38f);
-    glVertex2f(0.24f,0.34f);
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//6  Right light
-    glColor3f (1.0f, 1.0f,1.0f);
-    glVertex2f(0.23f,0.43f);
-    glVertex2f(0.25f,0.43f);
-    glVertex2f(0.23f,0.45f);
-
-    glEnd();
-
-    glBegin(GL_POLYGON);
-//7 left light
-    glColor3f (1.0f, 1.0f,1.0f);
-    glVertex2f(0.12f,0.43f);
-    glVertex2f(0.10f,0.43f);
-    glVertex2f(0.12f,0.45f);
-    glEnd();
-    glPopMatrix();
-    glLoadIdentity();
-
+    drawCar(position1_x_2, position3, 0.58f, 0.42f, 0.27f);
 }
 
 /// bomb
@@ -1364,8 +1189,19 @@ void health(int a)
 }
 
 void update1(int value1) {
+    if (isPaused)
+    {
+        glutPostRedisplay();
+        glutTimerFunc(100, update1, 0);
+        return;
+    }
 
     // Unconditionally update positions of all cars and obstacles
+    updateDifficultyFromProgress();
+    speed1 = BASE_ENEMY_SPEED * difficultyMultiplier * 1.00f;
+    speed2 = BASE_ENEMY_SPEED * difficultyMultiplier * 1.08f;
+    speed3 = BASE_ENEMY_SPEED * difficultyMultiplier * 1.16f;
+    speed4 = BASE_ENEMY_SPEED * difficultyMultiplier * 0.95f;
 
     position1 -= speed1;
 
@@ -1478,6 +1314,8 @@ void instruction()
     renderBitmapString(-0.32f, 0.15f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"Press S to start");
     renderBitmapString(-0.32f, 0.08f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"UP = faster, DOWN = slower");
     renderBitmapString(-0.32f, 0.01f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"LEFT, RIGHT = move your car");
+    renderBitmapString(-0.32f, -0.06f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"Press R to restart anytime");
+    renderBitmapString(-0.32f, -0.13f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"P = pause/resume, H = hitbox debug");
 
 
     renderBitmapString(0.0f, -0.4f, 0.0f,GLUT_BITMAP_TIMES_ROMAN_24,"Press 'X' to go Exit");
@@ -1591,10 +1429,18 @@ void drawScoreboard()
 ///Scoreboard Update
 void updateScoreboard(int value)
 {
+    if (isPaused)
+    {
+        glutPostRedisplay();
+        glutTimerFunc(100, updateScoreboard, 0);
+        return;
+    }
+
     // Increment score and distance
     if (lives > 0) {
     score++;
     distancee += 0.04f; // You can adjust this increment value according to your needs
+    updateBestScoreIfNeeded();
     }
 
     glutPostRedisplay();
@@ -1634,6 +1480,11 @@ void gameoverPage()
     float wave = sin(glutGet(GLUT_ELAPSED_TIME) / 400.0f);
     glColor3f(1.0f, 0.8f + 0.1f * wave, 0.2f); // Yellow with waving alpha
     renderBitmapString(-0.6f, 0.1f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "DISTANCE TRAVELED");
+
+    char bestScoreText[40];
+    sprintf(bestScoreText, "BEST SCORE: %d", bestScore);
+    glColor3f(0.2f, 0.9f, 1.0f);
+    renderBitmapString(-0.45f, 0.25f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, bestScoreText);
 
     // Draw actual distance with spinning effect
     float spin = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
@@ -1683,10 +1534,26 @@ void display()
         bomb();
         glLoadIdentity();
 
-        checkCollision();
-        if (lives <= 0)
+        if (showHitboxes)
         {
-            glutDisplayFunc(gameoverPage);
+            drawHitbox(makeCarHitbox(main_car_x, main_car_y), 0.0f, 1.0f, 0.0f);
+            drawHitbox(makeCarHitbox(position1_x, position1), 1.0f, 0.0f, 0.0f);
+            drawHitbox(makeCarHitbox(position1_x_1, position2), 1.0f, 0.0f, 0.0f);
+            drawHitbox(makeCarHitbox(position1_x_2, position3), 1.0f, 0.0f, 0.0f);
+            drawHitbox(makeBombHitbox(B1, B2), 1.0f, 0.7f, 0.0f);
+            if (healthPickupAvailable)
+            {
+                drawHitbox(makeHeartHitbox(H1, position4), 1.0f, 0.0f, 1.0f);
+            }
+        }
+
+        if (!isPaused)
+        {
+            checkCollision();
+            if (lives <= 0)
+            {
+                glutDisplayFunc(gameoverPage);
+            }
         }
 
     }
@@ -1764,6 +1631,14 @@ void display()
     drawHearts(); // Draw hearts representing lives left
     drawScoreboard();
 
+    if (isPaused && lives > 0)
+    {
+        glColor3f(1.0f, 1.0f, 0.2f);
+        renderBitmapString(-0.16f, 0.02f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "PAUSED");
+        glColor3f(0.9f, 0.9f, 0.9f);
+        renderBitmapString(-0.36f, -0.06f, 0.0f, GLUT_BITMAP_HELVETICA_18, "Press P to Resume");
+    }
+
     glutSwapBuffers();
 
 }
@@ -1777,6 +1652,25 @@ void keyboardInput(unsigned char key, int x, int y)
             glutPostRedisplay();
             break;
         case 's':
+            glutDisplayFunc(display);
+            glutPostRedisplay();
+            break;
+        case 'p':
+        case 'P':
+            if (lives > 0)
+            {
+                isPaused = !isPaused;
+            }
+            glutPostRedisplay();
+            break;
+        case 'h':
+        case 'H':
+            showHitboxes = !showHitboxes;
+            glutPostRedisplay();
+            break;
+        case 'r':
+        case 'R':
+            resetGameState();
             glutDisplayFunc(display);
             glutPostRedisplay();
             break;
@@ -1799,6 +1693,7 @@ int main(int argc, char** argv)
 
 {
     srand(static_cast<unsigned int>(time(NULL)));
+    loadBestScore();
 
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
