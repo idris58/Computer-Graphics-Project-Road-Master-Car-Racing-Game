@@ -1392,8 +1392,49 @@ void update1(int value1) {
     } else {
 
         assignUniqueEnemyLanes(position1_x, position1_x_1, position1_x_2);
-        B1 = randomLaneX();
-        H1 = randomLaneX();
+        bool occupied[4] = {false, false, false, false};
+        occupied[laneIndexForX(position1_x)] = true;
+        occupied[laneIndexForX(position1_x_1)] = true;
+        occupied[laneIndexForX(position1_x_2)] = true;
+
+        int freeLanes[4];
+        int freeCount = 0;
+        for (int lane = 0; lane < 4; ++lane)
+        {
+            if (!occupied[lane])
+            {
+                freeLanes[freeCount++] = lane;
+            }
+        }
+
+        if (freeCount > 0)
+        {
+            // Put bomb in a free lane so it does not stack with enemy cars.
+            int bombLane = freeLanes[rand() % freeCount];
+            B1 = laneXFromIndex(bombLane);
+
+            // Put heart in a different road lane than the bomb.
+            int heartCandidates[4];
+            int heartCount = 0;
+            for (int lane = 0; lane < 4; ++lane)
+            {
+                if (lane != bombLane)
+                {
+                    heartCandidates[heartCount++] = lane;
+                }
+            }
+            H1 = laneXFromIndex(heartCandidates[rand() % heartCount]);
+        }
+        else
+        {
+            // Fallback if lane metadata gets inconsistent.
+            B1 = randomLaneX();
+            H1 = randomLaneX();
+            while (sameLane(B1, H1))
+            {
+                H1 = randomLaneX();
+            }
+        }
 
         // Reset positions
 
