@@ -22,8 +22,8 @@ const float PLAYER_MIN_X = LANE_1_X;
 const float PLAYER_MAX_X = LANE_4_X;
 const float CAR_ANCHOR_X = 0.102f;
 const float PLAYER_LANE_CHANGE_SPEED = 0.025f;
-const float BASE_ENEMY_SPEED = 0.05f;
 const float MAX_DIFFICULTY_MULTIPLIER = 2.6f;
+const float MAX_SYNC_SPEED = 0.18f;
 int playerLaneIndex = 1;
 int targetPlayerLaneIndex = 1;
 /// Score
@@ -54,17 +54,18 @@ int damageCooldownStartMs = 0;
 const int DAMAGE_COOLDOWN_MS = 700;
 bool healthPickupAvailable = true;
 float difficultyMultiplier = 1.0f;
+float currentScrollSpeed = 0.029f;
 bool isPaused = false;
 bool showHitboxes = false;
 int bestScore = 0;
 
 const float CAR_CENTER_OFFSET_Y = 0.351f;
-const float BOMB_CENTER_OFFSET_Y = 0.19f;
+const float BOMB_CENTER_OFFSET_Y = 0.0f;
 const float HEART_CENTER_OFFSET_Y = 0.026f;
 const float CAR_HITBOX_HALF_W = 0.048f;
 const float CAR_HITBOX_HALF_H = 0.21f;
-const float BOMB_HITBOX_HALF_W = 0.050f;
-const float BOMB_HITBOX_HALF_H = 0.050f;
+const float BOMB_HITBOX_HALF_W = 0.040f;
+const float BOMB_HITBOX_HALF_H = 0.040f;
 const float HEART_HITBOX_HALF_W = 0.032f;
 const float HEART_HITBOX_HALF_H = 0.032f;
 const char* BEST_SCORE_FILE = "best_score.txt";
@@ -128,6 +129,21 @@ void updateDifficultyFromProgress()
     difficultyMultiplier = combined;
 }
 
+void updateSyncedSpeed()
+{
+    updateDifficultyFromProgress();
+    float difficultyBoost = (difficultyMultiplier - 1.0f) * 0.015f;
+    currentScrollSpeed = speedtree + difficultyBoost;
+    if (currentScrollSpeed < MIN_SCROLL_SPEED)
+    {
+        currentScrollSpeed = MIN_SCROLL_SPEED;
+    }
+    else if (currentScrollSpeed > MAX_SYNC_SPEED)
+    {
+        currentScrollSpeed = MAX_SYNC_SPEED;
+    }
+}
+
 Hitbox makeCarHitbox(float laneX, float baseY)
 {
     Hitbox box;
@@ -172,6 +188,18 @@ void drawHitbox(const Hitbox &b, float r, float g, float blue)
     glVertex2f(b.cx + b.halfW, b.cy - b.halfH);
     glVertex2f(b.cx + b.halfW, b.cy + b.halfH);
     glVertex2f(b.cx - b.halfW, b.cy + b.halfH);
+    glEnd();
+}
+
+void drawFilledCircle(float cx, float cy, float r, int segments)
+{
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex2f(cx, cy);
+    for (int i = 0; i <= segments; ++i)
+    {
+        float a = (2.0f * 3.1415926f * i) / segments;
+        glVertex2f(cx + cos(a) * r, cy + sin(a) * r);
+    }
     glEnd();
 }
 
@@ -228,6 +256,7 @@ void resetGameState()
     }
 
     speedtree = 0.029f;
+    currentScrollSpeed = speedtree;
     damageCooldownActive = false;
     damageCooldownStartMs = 0;
     healthPickupAvailable = true;
@@ -553,6 +582,8 @@ void update(int value)
         return;
     }
 
+    updateSyncedSpeed();
+
     float targetX = laneXFromIndex(targetPlayerLaneIndex);
     float dx = targetX - main_car_x;
     if (fabs(dx) <= PLAYER_LANE_CHANGE_SPEED)
@@ -567,7 +598,7 @@ void update(int value)
 
     if(positiontree <-1.0)
         positiontree = 1.0f;
-    positiontree -= speedtree;
+    positiontree -= currentScrollSpeed;
 
     glutPostRedisplay();
     glutTimerFunc(50, update, 0);
@@ -1105,31 +1136,35 @@ void car3(int d)
 void bomb()
 
 {
-
-    // Draw bomb body
-
     glPushMatrix();
-    glTranslatef(B1 - 0.171f, B2, 0.0f); // Center bomb on selected lane
-    glScalef(0.38,0.38,0);
-    glBegin(GL_POLYGON);
-    glColor3ub(255,154,0);
-    glVertex2f(.47f,0.51f);
-    glVertex2f(0.54f,0.53f);
-    glVertex2f(0.48f,0.48f);
-    glVertex2f(.52,0.42f);
-    glVertex2f(.46f,0.46f);
-    glVertex2f(0.42f,0.40f);
-    glVertex2f(0.42f,0.46f);
-    glVertex2f(.36f,0.42f);
-    glVertex2f(.40f,0.50f);
-    glVertex2f(0.36f,0.54f);
-    glVertex2f(0.42f,0.52f);
-    glVertex2f(.43f,0.60f);
-    glVertex2f(.44f,0.52f);
-    glVertex2f(0.50f,0.60f);
+    glTranslatef(B1, B2, 0.0f);
+
+    // Outer ring
+    glColor3f(0.15f, 0.15f, 0.15f);
+    drawFilledCircle(0.0f, 0.0f, 0.044f, 30);
+
+    // Main bomb body (smaller than previous version)
+    glColor3f(0.03f, 0.03f, 0.03f);
+    drawFilledCircle(0.0f, 0.0f, 0.032f, 30);
+
+    // Rim shine
+    glColor3f(0.30f, 0.30f, 0.30f);
+    drawFilledCircle(-0.012f, 0.012f, 0.011f, 18);
+
+    // Fuse stem
+    glColor3f(0.35f, 0.20f, 0.05f);
+    glBegin(GL_LINES);
+    glVertex2f(0.0f, 0.036f);
+    glVertex2f(0.016f, 0.068f);
     glEnd();
+
+    // Fuse spark
+    glColor3f(1.0f, 0.85f, 0.20f);
+    drawFilledCircle(0.018f, 0.072f, 0.009f, 14);
+    glColor3f(1.0f, 0.45f, 0.05f);
+    drawFilledCircle(0.018f, 0.072f, 0.004f, 12);
+
     glPopMatrix();
-    glLoadIdentity();
 }
 
 ///live
@@ -1197,11 +1232,15 @@ void update1(int value1) {
     }
 
     // Unconditionally update positions of all cars and obstacles
-    updateDifficultyFromProgress();
-    speed1 = BASE_ENEMY_SPEED * difficultyMultiplier * 1.00f;
-    speed2 = BASE_ENEMY_SPEED * difficultyMultiplier * 1.08f;
-    speed3 = BASE_ENEMY_SPEED * difficultyMultiplier * 1.16f;
-    speed4 = BASE_ENEMY_SPEED * difficultyMultiplier * 0.95f;
+    updateSyncedSpeed();
+    speed1 = currentScrollSpeed;
+    speed2 = currentScrollSpeed;
+    speed3 = currentScrollSpeed;
+    speed4 = currentScrollSpeed * 0.78f;
+    if (speed4 < 0.008f)
+    {
+        speed4 = 0.008f;
+    }
 
     position1 -= speed1;
 
