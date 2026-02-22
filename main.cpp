@@ -53,6 +53,7 @@ bool damageCooldownActive = false;
 int damageCooldownStartMs = 0;
 const int DAMAGE_COOLDOWN_MS = 700;
 bool healthPickupAvailable = true;
+bool bombAvailable = true;
 float difficultyMultiplier = 1.0f;
 float currentScrollSpeed = 0.029f;
 bool isPaused = false;
@@ -260,6 +261,7 @@ void resetGameState()
     damageCooldownActive = false;
     damageCooldownStartMs = 0;
     healthPickupAvailable = true;
+    bombAvailable = true;
     difficultyMultiplier = 1.0f;
     isPaused = false;
 }
@@ -316,7 +318,7 @@ bool checkCollision()
         hitboxesOverlap(playerBox, enemy2Box) ||
         hitboxesOverlap(playerBox, enemy3Box);
 
-    bool bombHazardHit = hitboxesOverlap(playerBox, bombBox);
+    bool bombHazardHit = bombAvailable && hitboxesOverlap(playerBox, bombBox);
 
     bool hazardHit = carHazardHit || bombHazardHit;
 
@@ -326,6 +328,10 @@ bool checkCollision()
         damageCooldownActive = true;
         damageCooldownStartMs = nowMs;
         collisionEvent = true;
+        if (bombHazardHit)
+        {
+            bombAvailable = false;
+        }
         if (lives <= 0)
         {
             updateBestScoreIfNeeded();
@@ -1136,6 +1142,11 @@ void car3(int d)
 void bomb()
 
 {
+    if (!bombAvailable)
+    {
+        return;
+    }
+
     glPushMatrix();
     glTranslatef(B1, B2, 0.0f);
 
@@ -1319,6 +1330,7 @@ void update1(int value1) {
         position4 = 1.90f;
         B2 = 1.2f;
         healthPickupAvailable = true;
+        bombAvailable = true;
 
         // Request a redraw
 
@@ -1653,7 +1665,10 @@ void display()
             drawHitbox(makeCarHitbox(position1_x, position1), 1.0f, 0.0f, 0.0f);
             drawHitbox(makeCarHitbox(position1_x_1, position2), 1.0f, 0.0f, 0.0f);
             drawHitbox(makeCarHitbox(position1_x_2, position3), 1.0f, 0.0f, 0.0f);
-            drawHitbox(makeBombHitbox(B1, B2), 1.0f, 0.7f, 0.0f);
+            if (bombAvailable)
+            {
+                drawHitbox(makeBombHitbox(B1, B2), 1.0f, 0.7f, 0.0f);
+            }
             if (healthPickupAvailable)
             {
                 drawHitbox(makeHeartHitbox(H1, position4), 1.0f, 0.0f, 1.0f);
