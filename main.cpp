@@ -1343,47 +1343,138 @@ void renderBitmapString(float x, float y, float z, void *font, char *string)
     }
 }
 
+int getBitmapTextWidth(void *font, const char *text)
+{
+    int width = 0;
+    for (const char *c = text; *c != '\0'; ++c)
+    {
+        width += glutBitmapWidth(font, *c);
+    }
+    return width;
+}
+
+void renderCenteredBitmapString(float centerX, float y, float z, void *font, const char *text)
+{
+    int pixelWidth = getBitmapTextWidth(font, text);
+    float worldWidth = (2.0f * pixelWidth) / static_cast<float>(glutGet(GLUT_WINDOW_WIDTH));
+    float startX = centerX - (worldWidth * 0.5f);
+    renderBitmapString(startX, y, z, font, const_cast<char*>(text));
+}
+
+void drawRect(float left, float top, float right, float bottom, float r, float g, float b)
+{
+    glColor3f(r, g, b);
+    glBegin(GL_QUADS);
+    glVertex2f(left, top);
+    glVertex2f(right, top);
+    glVertex2f(right, bottom);
+    glVertex2f(left, bottom);
+    glEnd();
+}
+
+void drawRectOutline(float left, float top, float right, float bottom, float r, float g, float b)
+{
+    glColor3f(r, g, b);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(left, top);
+    glVertex2f(right, top);
+    glVertex2f(right, bottom);
+    glVertex2f(left, bottom);
+    glEnd();
+}
+
 void instruction()
 {
-    glClearColor(0.0f,0.0f,0.0f, 0.0f); // Set background color to black and opaque
-    glClear(GL_COLOR_BUFFER_BIT); // Clear the color buffer (background)
+    glClearColor(0.03f, 0.06f, 0.12f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 
-    glColor3f(1.0,1.0,1.0);
-    renderBitmapString(-0.1f, 0.22f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "INSTRUCTIOS");
-    renderBitmapString(-0.32f, 0.15f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"Press S to start");
-    renderBitmapString(-0.32f, 0.08f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"UP = faster, DOWN = slower");
-    renderBitmapString(-0.32f, 0.01f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"LEFT, RIGHT = move your car");
-    renderBitmapString(-0.32f, -0.06f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"Press R to restart anytime");
-    renderBitmapString(-0.32f, -0.13f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"P = pause/resume, H = hitbox debug");
+    // Background gradient
+    glBegin(GL_QUADS);
+    glColor3f(0.03f, 0.08f, 0.18f);
+    glVertex2f(-1.0f, 1.0f);
+    glVertex2f(1.0f, 1.0f);
+    glColor3f(0.01f, 0.03f, 0.08f);
+    glVertex2f(1.0f, -1.0f);
+    glVertex2f(-1.0f, -1.0f);
+    glEnd();
 
+    drawRect(-0.70f, 0.78f, 0.70f, -0.68f, 0.08f, 0.10f, 0.16f);
+    drawRectOutline(-0.70f, 0.78f, 0.70f, -0.68f, 0.35f, 0.58f, 0.95f);
 
-    renderBitmapString(0.0f, -0.4f, 0.0f,GLUT_BITMAP_TIMES_ROMAN_24,"Press 'X' to go Exit");
+    drawRect(-0.70f, 0.78f, 0.70f, 0.58f, 0.11f, 0.18f, 0.30f);
+    drawRectOutline(-0.70f, 0.78f, 0.70f, 0.58f, 0.55f, 0.75f, 1.0f);
 
-    //glLoadIdentity();
+    glColor3f(0.93f, 0.97f, 1.0f);
+    renderBitmapString(-0.16f, 0.69f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "HOW TO PLAY");
+    glColor3f(0.78f, 0.88f, 1.0f);
+    renderBitmapString(-0.29f, 0.61f, 0.0f, GLUT_BITMAP_HELVETICA_18, "ROAD MASTER CAR RACING CONTROLS");
+
+    drawRect(-0.62f, 0.50f, 0.62f, -0.34f, 0.06f, 0.09f, 0.14f);
+    drawRectOutline(-0.62f, 0.50f, 0.62f, -0.34f, 0.32f, 0.52f, 0.88f);
+    glColor3f(0.95f, 0.98f, 1.0f);
+    renderBitmapString(-0.52f, 0.42f, 0.0f, GLUT_BITMAP_HELVETICA_18, "S : Start the race");
+    renderBitmapString(-0.52f, 0.33f, 0.0f, GLUT_BITMAP_HELVETICA_18, "Arrow Up/Down : Increase/Decrease speed");
+    renderBitmapString(-0.52f, 0.24f, 0.0f, GLUT_BITMAP_HELVETICA_18, "Arrow Left/Right : Change lane");
+    renderBitmapString(-0.52f, 0.15f, 0.0f, GLUT_BITMAP_HELVETICA_18, "P : Pause or Resume");
+    renderBitmapString(-0.52f, 0.06f, 0.0f, GLUT_BITMAP_HELVETICA_18, "H : Toggle hitbox debug view");
+    renderBitmapString(-0.52f, -0.03f, 0.0f, GLUT_BITMAP_HELVETICA_18, "R : Restart game instantly");
+    renderBitmapString(-0.52f, -0.12f, 0.0f, GLUT_BITMAP_HELVETICA_18, "X : Exit game");
+
+    drawRect(-0.54f, -0.48f, 0.54f, -0.62f, 0.12f, 0.18f, 0.30f);
+    drawRectOutline(-0.54f, -0.48f, 0.54f, -0.62f, 0.55f, 0.75f, 1.0f);
+    glColor3f(1.0f, 0.95f, 0.55f);
+    renderBitmapString(-0.36f, -0.55f, 0.0f, GLUT_BITMAP_HELVETICA_18, "Press S to Play  |  Press X to Exit");
+
     glutSwapBuffers();
 }
 void coverpage()
 {
-    glClearColor(1.0f, 1.0f, 1.0f, 0.0f); // Set background color to black and opaque
-    glClear(GL_COLOR_BUFFER_BIT); // Clear the color buffer (background)
+    glClearColor(0.03f, 0.06f, 0.12f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 
-    glColor3f(0.0,0.0,0.0);
-    renderBitmapString(-0.33f, 0.82f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "American International University, Bangladesh (AIUB)");
-    renderBitmapString(-0.3f, 0.72f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "FACULTY OF SCIENCE AND TECHNOLOGY");
-    renderBitmapString(-0.3f, 0.62f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "PROJECT ON : ROAD MASTER CAR RACING");
-    renderBitmapString(-0.28, 0.52f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "COURSE NAME : COMPUTER GRAPHICS");
-    renderBitmapString(-0.31f, 0.42f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "COURSE SUPERVISOR : MAHFUJUR RAHMAN");
+    // Background gradient band
+    glBegin(GL_QUADS);
+    glColor3f(0.04f, 0.08f, 0.18f);
+    glVertex2f(-1.0f, 1.0f);
+    glVertex2f(1.0f, 1.0f);
+    glColor3f(0.01f, 0.02f, 0.06f);
+    glVertex2f(1.0f, -1.0f);
+    glVertex2f(-1.0f, -1.0f);
+    glEnd();
 
-    renderBitmapString(-0.1f, 0.22f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "GROUP MEMBER");
-    renderBitmapString(-0.32f, 0.15f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"1.   SHA MOHAMAD YAHIA IDRIS           (ID:22-46787-1)");
-    renderBitmapString(-0.32f, 0.08f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"2.   MD YEASIN NEWAZ                              (ID:22-46803-1)");
-    renderBitmapString(-0.32f, 0.01f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"3.   RANGON KUMAR SHAHA                   (ID:22-46585-1)");
-    renderBitmapString(-0.32f, -0.06f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,"4.   MD. FAYSAL KABIR                               (ID:22-46783-1)");
-    renderBitmapString(-0.32f, -0.13f, 0.0f,GLUT_BITMAP_TIMES_ROMAN_24,"5.   MD. REZWAN MUJAHID RUDRO        (ID:22-46802-1)");
+    // Main content card
+    drawRect(-0.78f, 0.90f, 0.78f, -0.76f, 0.08f, 0.10f, 0.16f);
+    drawRectOutline(-0.78f, 0.90f, 0.78f, -0.76f, 0.35f, 0.58f, 0.95f);
 
-    renderBitmapString(0.0f, -0.6f, 0.0f,GLUT_BITMAP_TIMES_ROMAN_24,"Press 'N' to go Next");
-    renderBitmapString(0.0f, -0.4f, 0.0f,GLUT_BITMAP_TIMES_ROMAN_24,"Press 'X' to go Exit");
+    // Header strip
+    drawRect(-0.78f, 0.90f, 0.78f, 0.70f, 0.11f, 0.18f, 0.30f);
+    drawRectOutline(-0.78f, 0.90f, 0.78f, 0.70f, 0.55f, 0.75f, 1.0f);
 
+    glColor3f(0.93f, 0.97f, 1.0f);
+    renderCenteredBitmapString(0.0f, 0.82f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "ROAD MASTER CAR RACING");
+    glColor3f(0.78f, 0.88f, 1.0f);
+    renderCenteredBitmapString(0.0f, 0.74f, 0.0f, GLUT_BITMAP_HELVETICA_18, "COMPUTER GRAPHICS PROJECT");
+
+    glColor3f(0.90f, 0.94f, 1.0f);
+    renderCenteredBitmapString(0.0f, 0.60f, 0.0f, GLUT_BITMAP_HELVETICA_18, "American International University, Bangladesh (AIUB)");
+    renderCenteredBitmapString(0.0f, 0.53f, 0.0f, GLUT_BITMAP_HELVETICA_18, "FACULTY OF SCIENCE AND TECHNOLOGY");
+    renderCenteredBitmapString(0.0f, 0.46f, 0.0f, GLUT_BITMAP_HELVETICA_18, "COURSE: COMPUTER GRAPHICS");
+    renderCenteredBitmapString(0.0f, 0.39f, 0.0f, GLUT_BITMAP_HELVETICA_18, "SUPERVISOR: MAHFUJUR RAHMAN");
+
+    drawRect(-0.72f, 0.29f, 0.72f, -0.30f, 0.06f, 0.09f, 0.14f);
+    drawRectOutline(-0.72f, 0.29f, 0.72f, -0.30f, 0.32f, 0.52f, 0.88f);
+    glColor3f(0.95f, 0.98f, 1.0f);
+    renderBitmapString(-0.12f, 0.23f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "GROUP MEMBERS");
+    renderBitmapString(-0.50f, 0.14f, 0.0f, GLUT_BITMAP_HELVETICA_18,"1. SHA MOHAMAD YAHIA IDRIS (ID:22-46787-1)");
+    renderBitmapString(-0.50f, 0.07f, 0.0f, GLUT_BITMAP_HELVETICA_18,"2. MD YEASIN NEWAZ (ID:22-46803-1)");
+    renderBitmapString(-0.50f, 0.00f, 0.0f, GLUT_BITMAP_HELVETICA_18,"3. RANGON KUMAR SHAHA (ID:22-46585-1)");
+    renderBitmapString(-0.50f, -0.07f, 0.0f, GLUT_BITMAP_HELVETICA_18,"4. MD. FAYSAL KABIR (ID:22-46783-1)");
+    renderBitmapString(-0.50f, -0.14f, 0.0f, GLUT_BITMAP_HELVETICA_18,"5. MD. REZWAN MUJAHID RUDRO (ID:22-46802-1)");
+
+    drawRect(-0.52f, -0.58f, 0.52f, -0.72f, 0.12f, 0.18f, 0.30f);
+    drawRectOutline(-0.52f, -0.58f, 0.52f, -0.72f, 0.55f, 0.75f, 1.0f);
+    glColor3f(1.0f, 0.95f, 0.55f);
+    renderBitmapString(-0.40f, -0.64f, 0.0f, GLUT_BITMAP_HELVETICA_18,"Press N to continue   |   Press X to exit");
 
     glutSwapBuffers();
 }
@@ -1489,64 +1580,47 @@ void updateScoreboard(int value)
 ///game over
 void gameoverPage()
 {
+    glClearColor(0.03f, 0.02f, 0.06f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
 
- glClear(GL_COLOR_BUFFER_BIT);
- glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // White
+    // Background gradient
+    glBegin(GL_QUADS);
+    glColor3f(0.10f, 0.04f, 0.12f);
+    glVertex2f(-1.0f, 1.0f);
+    glVertex2f(1.0f, 1.0f);
+    glColor3f(0.02f, 0.02f, 0.05f);
+    glVertex2f(1.0f, -1.0f);
+    glVertex2f(-1.0f, -1.0f);
+    glEnd();
 
-    // Draw game over title
-    glPushMatrix();
-    glColor3f(1.0f, 0.0f, 0.0f); // Red
-    renderBitmapString(-0.25f, 0.8f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER");
-    glPopMatrix();
+    drawRect(-0.60f, 0.74f, 0.60f, -0.62f, 0.09f, 0.08f, 0.14f);
+    drawRectOutline(-0.60f, 0.74f, 0.60f, -0.62f, 0.85f, 0.30f, 0.40f);
 
-    // Draw final score and distance
-    glPushMatrix();
-    glColor3f(1.0f, 1.0f, 1.0f); // White
+    float pulse = 0.85f + 0.15f * sin(glutGet(GLUT_ELAPSED_TIME) / 220.0f);
+    glColor3f(1.0f, 0.20f * pulse, 0.30f * pulse);
+    renderBitmapString(-0.15f, 0.64f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "GAME OVER");
 
-    // Draw "Your Score" text with pulsating effect
-    float pulse = sin(glutGet(GLUT_ELAPSED_TIME) / 200.0f);
-    glColor3f(1.0f, 0.8f + 0.2f * pulse, 0.2f); // Yellow with pulsating alpha
-    renderBitmapString(-0.45f, 0.6f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "YOUR SCORE");
+    char scoreText[40];
+    sprintf(scoreText, "SCORE : %d", score);
+    glColor3f(1.0f, 0.95f, 0.55f);
+    renderBitmapString(-0.24f, 0.42f, 0.0f, GLUT_BITMAP_HELVETICA_18, scoreText);
 
-    // Draw actual score with bouncing effect
-    //float bounce = sin(glutGet(GLUT_ELAPSED_TIME) / 300.0f);
-    char scoreText[20];
-    sprintf(scoreText, "%d", score);
-    glColor3f(0.9f, 1.0f, 0.2f); // Yellow-green
-    renderBitmapString(-0.05f, 0.4f+ 0.1f ,0.0f , GLUT_BITMAP_TIMES_ROMAN_24,scoreText);
-
-    // Draw "Distance Traveled" text with waving effect
-    float wave = sin(glutGet(GLUT_ELAPSED_TIME) / 400.0f);
-    glColor3f(1.0f, 0.8f + 0.1f * wave, 0.2f); // Yellow with waving alpha
-    renderBitmapString(-0.6f, 0.1f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "DISTANCE TRAVELED");
+    char distanceText[40];
+    sprintf(distanceText, "DISTANCE : %.2f KM", distancee);
+    glColor3f(0.70f, 0.95f, 1.0f);
+    renderBitmapString(-0.24f, 0.32f, 0.0f, GLUT_BITMAP_HELVETICA_18, distanceText);
 
     char bestScoreText[40];
-    sprintf(bestScoreText, "BEST SCORE: %d", bestScore);
-    glColor3f(0.2f, 0.9f, 1.0f);
-    renderBitmapString(-0.45f, 0.25f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, bestScoreText);
+    sprintf(bestScoreText, "BEST SCORE : %d", bestScore);
+    glColor3f(0.60f, 1.0f, 0.70f);
+    renderBitmapString(-0.24f, 0.22f, 0.0f, GLUT_BITMAP_HELVETICA_18, bestScoreText);
 
-    // Draw actual distance with spinning effect
-    float spin = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
-    char distanceText[30];
-    sprintf(distanceText, "%.2f KM", distancee);
-    glColor3f(0.9f, 1.0f, 0.2f); // Yellow-green
-    glTranslatef(-0.15f, -0.1f, 0.0f);
-    glRotatef(spin * 100.0f, 0.0f, 0.0f, 1.0f);
-    renderBitmapString(0.0f, 0.0f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24,distanceText);
-    glPopMatrix();
+    drawRect(-0.50f, -0.10f, 0.50f, -0.32f, 0.13f, 0.11f, 0.20f);
+    drawRectOutline(-0.50f, -0.10f, 0.50f, -0.32f, 0.62f, 0.52f, 0.92f);
+    glColor3f(0.96f, 0.96f, 1.0f);
+    renderBitmapString(-0.31f, -0.18f, 0.0f, GLUT_BITMAP_HELVETICA_18, "Press R to Restart  |  Press X to Exit");
 
-    // Draw flashing "Press Esc to Exit" text
-    glPushMatrix();
-    int flash = glutGet(GLUT_ELAPSED_TIME) / 500 % 2;
-    if (flash) {
-        glColor3f(0.8f, 0.8f, 0.8f);
-    } else {
-        glColor3f(1.0f, 1.0f, 1.0f); // White
-    }
-    renderBitmapString(-0.3f, -0.7f, 0.0f, GLUT_BITMAP_TIMES_ROMAN_24, "Press X to Exit");
-    glPopMatrix();
-
-glutSwapBuffers();
+    glutSwapBuffers();
 }
 
 void display()
